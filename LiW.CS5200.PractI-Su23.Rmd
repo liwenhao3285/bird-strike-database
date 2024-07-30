@@ -1,0 +1,451 @@
+---
+title: "Practicum I CS5200"
+author: "Wenhao Li"
+date: "Summer Full 2023"
+output:
+  pdf_document: default
+  html_notebook: default
+email: li.wenhao3@northeastern.edu
+---
+
+## Connect to Database
+
+Establish link to database at freemysqlhosting.net
+```{r}
+library(RMySQL)
+
+db_name_fh <- "sql3654492"
+db_user_fh <- "sql3654492"
+db_host_fh <- "sql3.freemysqlhosting.net"
+db_pwd_fh <- "LfRIZIav7w"
+db_port_fh <- 3306
+
+mydb.fh <-  dbConnect(RMySQL::MySQL(), user = db_user_fh, password = db_pwd_fh,
+                      dbname = db_name_fh, host = db_host_fh, port = db_port_fh)
+
+dbcon <- mydb.fh
+```
+
+## Create Database
+
+Table for airport
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS airport(
+  aid INTEGER AUTO_INCREMENT PRIMARY KEY,
+  airportName VARCHAR(50) DEFAULT 'unknown',
+  airportState VARCHAR(50) DEFAULT 'unknown',
+  airportCode VARCHAR(50) DEFAULT 'unknown'
+)
+```
+
+Table for each flights
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS flights(
+  fid INT PRIMARY KEY,
+  flight_date DATE DEFAULT NULL,
+  origin INT DEFAULT 1,
+  airline VARCHAR(50) DEFAULT "unknown",
+  aircraft VARCHAR(50) DEFAULT "unknown" ,
+  altitude INT UNSIGNED DEFAULT 0,
+  heavy BOOLEAN DEFAULT FALSE,
+  CONSTRAINT flights_fk_a FOREIGN KEY(origin) REFERENCES airport(aid)
+)
+```
+
+Look up table: conditions
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS conditions(
+  cid INT AUTO_INCREMENT PRIMARY KEY,
+  sky_condition VARCHAR(50) DEFAULT "unknown",
+  explanation VARCHAR(50) DEFAULT ""
+)
+```
+
+Create table: strike
+```{sql connection=dbcon}
+CREATE TABLE IF NOT EXISTS strike(
+  sid INT AUTO_INCREMENT PRIMARY KEY,
+  fid INT NOT NULL DEFAULT 1,
+  numbirds INT UNSIGNED DEFAULT 0,
+  impact VARCHAR(50) DEFAULT "unknown",
+  damage BOOLEAN DEFAULT FALSE,
+  altitude INT UNSIGNED DEFAULT 0,
+  conditions INT DEFAULT 1,
+  CONSTRAINT positive_altitude CHECK(altitude >= 0),
+  CONSTRAINT strike_fk_f FOREIGN KEY(fid) REFERENCES flights(fid),
+  CONSTRAINT strike_fk_c FOREIGN KEY(conditions) REFERENCES conditions(cid)
+)
+```
+
+## Tests for table implantation
+
+```{sql connection=dbcon, eval = F}
+INSERT INTO airport VALUES
+  ()
+```
+
+
+Should fail because of foreign key constrain
+```{sql connection=dbcon, eval = F}
+INSERT INTO flights (fid, flight_date, origin, airline, aircraft, altitude, heavy) VALUES
+  (202152, "2000-11-23", 1, "US AIRWAYS*", "B-737-400", 1500, TRUE)
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+INSERT INTO airport (airportName, airportState, airportCode) VALUES
+  ("LAGUARDIA NY", "New York", "1"),
+  ("DALLAS/FORT WORTH INTL ARPT", "Texas", "2")
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+SELECT *
+FROM airport
+```
+altitude should convert to default value
+```{sql connection=dbcon, eval = F}
+INSERT INTO flights 
+SET fid = 202152,
+    flight_date = "2000-11-23",
+    airline = "US AIRWAYS*",
+    aircraft = "B-737-400",
+    altitude = -1500,
+    heavy = TRUE,
+    origin = (
+    SELECT aid
+    FROM airport
+    WHERE airportName = "LAGUARDIA NY")
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+SELECT * FROM flights
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+INSERT INTO conditions (sky_condition, explanation) VALUES
+  ("NO CLOUD", ""),
+  ("Some Cloud", "")
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+SELECT * FROM conditions
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+INSERT INTO strike 
+SET numbirds = 859,
+    impact = "ENGINE SHUT DOWN",
+    damage = TRUE,
+    altitude = -1500,
+    fid = 202152,
+    conditions = 1
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+SELECT * FROM strike
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+DELETE FROM airport
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+DELETE FROM flights
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+DELETE FROM conditions
+```
+Tests for table implantation
+```{sql connection=dbcon, eval = F}
+DELETE FROM strike
+```
+
+## Populate Database
+
+Adding Default Conditions for each table except strike
+```{sql connection=dbcon}
+INSERT INTO airport (airportCode) VALUES
+  ("DEFAULT")
+```
+
+Adding Default Conditions for each table except strike
+```{sql connection=dbcon}
+INSERT INTO flights
+SET fid = 0,
+    origin = (SELECT aid
+              FROM airport
+              WHERE airportName = "unknown" AND airportCode = "DEFAULT")
+```
+
+Adding Default Conditions for each table except strike
+```{sql connection=dbcon}
+INSERT INTO conditions VALUES
+  ()
+```
+
+Installing and loading of libraries
+```{r, warning=FALSE}
+install.packages("dplyr")
+library(dplyr)
+```
+Manipulate dataframe for populating table
+```{r}
+fileName <- "BirdStrikesData-V2.csv"
+
+df <- read.csv(fileName)
+
+df <- data.frame(lapply(df, function(x) {gsub("\\*", "", x)}))
+
+#Add "" to each column which will be inserted into the database as TEXT
+df$airport <- paste('"', df$airport, '"')
+df$model <- paste('"', df$model, '"')
+df$impact <- paste('"', df$impact, '"')
+df$airline <- paste('"', df$airline, '"')
+df$origin <- paste('"', df$origin, '"')
+df$sky_conditions <- paste('"', df$sky_conditions, '"')
+
+#Change all colume that is empty or "N/A" to DEFAULT ("unknown" for TEXT, FALSE for boolean, 0 for INT)
+df <- data.frame(lapply(df, function(x) {gsub('"  "', "DEFAULT", x)}))
+df <- data.frame(lapply(df, function(x) {gsub('" N/A "', "DEFAULT", x)}))
+
+#Delete space in TEXT
+df <- data.frame(lapply(df, function(x) {gsub('" ', '"', x)}))
+df <- data.frame(lapply(df, function(x) {gsub(' "', '"', x)}))
+```
+
+
+Importing Data into table airport
+```{r}
+#Group by function delete repeating rows
+airport_df <-  df[] %>% group_by(airport, origin) %>%
+                    summarise(.groups = 'drop',
+                              empty_column = "",)
+
+#Run insert for each row in airport_df
+for (i in 1:nrow(airport_df)){
+  row <- airport_df[i,]
+  sql <- paste0('INSERT INTO airport (airportName, airportState, airportCode) VALUES (', 
+                row[1], ', ', row[2], ', DEFAULT)')
+  dbExecute(dbcon, sql)
+}
+```
+
+Importing Data into conditions
+```{r}
+#Group by function delete repeating rows
+conditions_df <- df[] %>% group_by(sky_conditions) %>%
+                    summarise(.groups = 'drop',
+                              empty_column = "",)
+
+#Run insert for each row in conditions_df
+for (i in 1:nrow(conditions_df)){
+  row <- conditions_df[i,]
+  sql <- paste0('INSERT INTO conditions (sky_condition, explanation) VALUES (', 
+                row[1], ', ', row[2], 'DEFAULT)')
+  dbExecute(dbcon, sql)
+}
+```
+
+Importing Data into table flights
+```{r}
+#Group by function delete repeating rows
+flights_df <- df[] %>% group_by(rid, flight_date, airport, origin, airline, model, altitude_ft, heavy_flag) %>%
+                    summarise(.groups = 'drop')
+
+#Convert date column to acceptable format
+flights_df$flight_date <- as.Date(flights_df$flight_date, "%m/%d/%Y")
+flights_df$flight_date <- as.character(flights_df$flight_date)
+
+#Convert boolean columns to acceptable format
+flights_df["heavy_flag"][flights_df["heavy_flag"] != "Yes"] <- "FALSE"
+flights_df["heavy_flag"][flights_df["heavy_flag"] == "Yes"] <- "TRUE"
+
+#Convert Default to coresponse value for sql query in FK insertion
+flights_df["airport"][flights_df["airport"] == "DEFAULT"] <- '"unknown"'
+flights_df["origin"][flights_df["origin"] == "DEFAULT"] <- '"unknown"'
+flights_df["altitude_ft"][flights_df["altitude_ft"] == ""] <- "0"
+flights_df["flight_date"][is.na(flights_df["flight_date"])] <- "DEFAULT"
+
+#Delete comma in column altitude
+flights_df$altitude_ft <- gsub(",","",flights_df$altitude_ft)
+
+#Run insert for each row in flights_df
+for (i in 1:nrow(flights_df)){
+  row <- flights_df[i,]
+  sql <- paste0('INSERT INTO flights SET fid = ', 
+                row[1], ', flight_date = "', row[2], 
+                '", origin = (SELECT aid FROM airport WHERE airportName = ',
+                row[3], 'AND airportState = ', row[4],'), airline = ', row[5], 
+                ', aircraft = ', row[6], ', altitude = ', row[7], ', heavy = ', row[8])
+  dbExecute(dbcon, sql)
+}
+```
+
+Importing Data into table strike
+```{r}
+#Group by function delete repeating rows
+strike_df <- df[] %>% group_by(rid, wildlife_struck, impact, damage, altitude_ft, sky_conditions) %>%
+                    summarise(.groups = 'drop')
+
+#Convert boolean columns to acceptable format
+strike_df["damage"][strike_df["damage"] != "No damage"] <- "TRUE"
+strike_df["damage"][strike_df["damage"] == "No damage"] <- "FALSE"
+strike_df["altitude_ft"][strike_df["altitude_ft"] == ""] <- "0"
+
+#Delete comma in column altitude
+strike_df <- data.frame(lapply(strike_df, function(x) {gsub("\\,", "", x)}))
+
+#Run insert for each row in strike_df
+for (i in 1:nrow(strike_df)){
+  row <- strike_df[i,]
+  sql <- paste0('INSERT INTO strike SET fid = (SELECT fid FROM flights WHERE flights.fid = ', 
+                row[1], '), conditions = (SELECT cid FROM conditions WHERE sky_condition = ', row[6],
+                '), numbirds = ', row[2], ', impact = ', row[3], ', damage = ', row[4], 
+                ', altitude = ', row[5])
+  dbExecute(dbcon, sql)
+}
+```
+
+Check table airport
+```{sql connection=dbcon}
+SELECT *
+FROM airport
+LIMIT 0,10
+```
+
+Check table conditions
+```{sql connection=dbcon}
+SELECT *
+FROM conditions
+```
+
+Check table flights
+```{sql connection=dbcon}
+SELECT *
+FROM flights
+LIMIT 0, 10
+```
+
+Check table strike
+```{sql connection=dbcon}
+SELECT *
+FROM strike
+LIMIT 0, 10
+```
+
+## DATA ANALYSIS
+
+Find the top 10 states with the greatest number of bird strike incidents
+```{sql connection=dbcon}
+SELECT airportState AS state, COUNT(*) AS incidentsNum
+FROM strike s
+  INNER JOIN flights f ON s.fid = f.fid
+  INNER JOIN airport a ON f.origin = a.aid
+GROUP BY a.airportState
+HAVING a.airportState != "unknown"
+ORDER BY incidentsNum DESC
+LIMIT 10
+```
+
+Find the airlines that had an above average number bird strike incidents
+```{sql connection=dbcon}
+SELECT airline, incidentsNum
+FROM (SELECT f.airline, COUNT(*) AS incidentsNum
+      FROM strike s
+        INNER JOIN flights f ON s.fid = f.fid
+      GROUP BY f.airline
+      HAVING f.airline != "unknown") AS t
+WHERE incidentsNum > 
+      (SELECT AVG(incidentsNum) AS Average
+      FROM (SELECT f.airline, COUNT(*) AS incidentsNum
+            FROM strike s
+              INNER JOIN flights f ON s.fid = f.fid
+            GROUP BY f.airline
+            HAVING f.airline != "unknown") AS t)
+```
+
+find the (total) number of birds that struck aircraft by month
+```{r}
+sql = "SELECT EXTRACT(MONTH FROM f.flight_date) AS month, COUNT(*) AS incidentsNum
+       FROM flights f
+         INNER JOIN strike s ON s.fid = f.fid
+       WHERE f.flight_date != '0000-00-00'
+       GROUP BY month"
+
+month_df <- dbGetQuery(dbcon, sql)
+
+print(month_df)
+```
+
+plot bird strike distribution each month
+```{r}
+barplot(month_df$incidentsNum, beside = FALSE, main = "Bird Strike Distribution Each Month",
+        names.arg = month_df$month, xlab = "Month", ylab = "number of incidents")
+```
+
+## Store Procedure for add new incidents
+
+adds a new strike to the database (store procedure)
+```{sql connection=dbcon}
+CREATE PROCEDURE newEntry (IN new_sky_condition TEXT, IN new_airportName TEXT, 
+                           IN new_airportState TEXT, IN new_fid INT, IN new_flight_date DATE,
+                           IN new_airline TEXT, IN new_aircraft TEXT, IN new_altitude INT,
+                           IN new_heavy BOOLEAN, IN new_numbirds INT, IN new_impact TEXT,
+                           IN new_damage BOOLEAN)
+BEGIN
+  -- check if sky_condition in new entry have store in database, if not, enter it into database
+  IF (!EXISTS (SELECT * FROM conditions WHERE sky_condition = new_sky_condition)) THEN
+    INSERT INTO conditions (sky_condition, explanation) VALUES (new_sky_condition, "");
+  END IF;
+  -- check if airport in new entry have store in database, if not, enter it into database
+  IF (!EXISTS (SELECT * FROM airport WHERE airportName = new_airportName 
+                                       AND airportState = new_airportState)) THEN
+    INSERT INTO airport (airportName, airportState) VALUES (new_airportName, new_airportState);
+  END IF;
+  -- check if flight in new entry have store in database, if not, enter it into database
+  IF (!EXISTS (SELECT * FROM flights WHERE fid = new_fid)) THEN
+    INSERT INTO flights SET fid = new_fid, 
+                            flight_date = new_flight_date,
+                            origin = (SELECT aid FROM airport WHERE airportName = new_airportName
+                                                                AND airportState = new_airportState),
+                            airline = new_airline,
+                            aircraft = new_aircraft,
+                            altitude = new_altitude,
+                            heavy = new_heavy;
+  END IF;
+  -- add new insidents
+  INSERT INTO strike SET fid = (SELECT fid FROM flights WHERE fid = new_fid),
+                         numbirds = new_numbirds,
+                         impact = new_impact,
+                         damage = new_damage,
+                         altitude = new_altitude,
+                         conditions = (SELECT cid FROM conditions 
+                                       WHERE sky_condition = new_sky_condition);
+END
+```
+Test Store Procedure
+```{sql connection=dbcon}
+CALL newEntry("OK", "OK", "OK", 11, "1000-10-10", "OK", "OK", 0, FALSE, 1, "OK", FALSE)
+```
+Test Store Procedure
+```{sql connection=dbcon}
+SELECT *
+FROM strike
+WHERE fid = 11
+```
+Test Store Procedure
+```{sql connection=dbcon}
+DELETE FROM strike WHERE fid = 11
+```
+Test Store Procedure
+```{sql connection=dbcon}
+DELETE FROM flights WHERE fid = 11
+```
+Test Store Procedure
+```{sql connection=dbcon}
+DELETE FROM conditions WHERE sky_condition = "OK"
+```
+Test Store Procedure
+```{sql connection=dbcon}
+DELETE FROM airport WHERE airportName = "OK"
+```

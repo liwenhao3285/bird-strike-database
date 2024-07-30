@@ -1,0 +1,91 @@
+---
+title: "Analysis of Sales Data from Pharm Company"
+Author: "Wenhao Li"
+Date: "12/04/2023"
+---
+
+Connect to Database
+```{r}
+library(RMySQL)
+
+db_name_fh <- "sql3654492"
+db_user_fh <- "sql3654492"
+db_host_fh <- "sql3.freemysqlhosting.net"
+db_pwd_fh <- "LfRIZIav7w"
+db_port_fh <- 3306
+
+mydb.fh <-  dbConnect(RMySQL::MySQL(), user = db_user_fh, password = db_pwd_fh,
+                      dbname = db_name_fh, host = db_host_fh, port = db_port_fh)
+
+dbcon <- mydb.fh
+```
+
+## Question 1: Top five sales reps with the most sales broken down by year
+```{r, warning = F}
+sql <- "SELECT year FROM rep_facts GROUP BY year"
+yearList <- dbGetQuery(dbcon, sql)
+
+df <- data.frame(ranking = 1:5)
+
+for (i in 1:nrow(yearList)){
+  year <- yearList$year[i]
+  
+  sql <- paste("SELECT name, year, totalSales
+                FROM rep_facts
+                WHERE year = ", year, "
+                GROUP BY name
+                ORDER BY totalSales DESC
+                LIMIT 5")
+  
+  result <- dbGetQuery(dbcon, sql)
+  
+  df <- cbind(df, paste(result$name, ":", as.character(result$totalSales)))
+  colnames(df)[i+1] = year
+}
+
+print(df)
+```
+
+## Question 2: Total sold per year per region
+```{r, warning = F}
+sql <- "SELECT year FROM sales_facts GROUP BY year"
+yearList <- dbGetQuery(dbcon, sql)
+sql <- "SELECT territory FROM sales_facts GROUP BY territory"
+regionList <- dbGetQuery(dbcon, sql)
+
+df <- data.frame(region = regionList$territory)
+
+for (i in 1:nrow(yearList)){
+  year <- yearList$year[i]
+  
+  sql <- paste("SELECT territory, year, totalSales
+                FROM sales_facts
+                WHERE year = ", year, "
+                GROUP BY territory
+                ORDER BY territory")
+  
+  result <- dbGetQuery(dbcon, sql)
+  
+  df <- cbind(df, result$totalSales)
+  colnames(df)[i+1] = year
+}
+
+print(df)
+```
+
+## Question 3:Total sold per quarter per year
+```{r, warning=FALSE}
+sql <- 'SELECT CONCAT(year, " ", quarter) AS time, totalSales
+        FROM sales_facts
+        GROUP BY year, quarter
+        ORDER BY year, FIELD(quarter, "first", "second", "third", "forth")'
+
+df <- dbGetQuery(dbcon, sql)
+
+x <- 1:nrow(df)
+
+plot(x, df$totalSales, "o", xaxt='n', xlab = "quarter", 
+     ylab = "Total Sales(USD)", main = "Total sold per quarter per year")
+axis(side = 1, at = x,labels = df$time)
+```
+

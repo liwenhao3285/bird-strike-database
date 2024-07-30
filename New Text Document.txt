@@ -1,0 +1,36 @@
+CREATE TABLE IF NOT EXISTS airport(
+  aid INTEGER AUTO_INCREMENT PRIMARY KEY,
+  airportName VARCHAR(50) DEFAULT 'unknown',
+  airportState VARCHAR(50) DEFAULT 'unknown',
+  airportCode VARCHAR(50) DEFAULT 'unknown'
+)
+
+CREATE TABLE IF NOT EXISTS flights(
+  fid INT PRIMARY KEY,
+  flight_date DATE DEFAULT NULL,
+  origin INT DEFAULT 1,
+  airline VARCHAR(50) DEFAULT "unknown",
+  aircraft VARCHAR(50) DEFAULT "unknown" ,
+  altitude INT UNSIGNED DEFAULT 0,
+  heavy BOOLEAN DEFAULT FALSE,
+  CONSTRAINT flights_fk_a FOREIGN KEY(origin) REFERENCES airport(aid)
+)
+
+CREATE TABLE IF NOT EXISTS conditions(
+  cid INT AUTO_INCREMENT PRIMARY KEY,
+  sky_condition VARCHAR(50) DEFAULT "unknown",
+  explanation VARCHAR(50) DEFAULT ""
+)
+
+CREATE TABLE IF NOT EXISTS strike(
+  sid INT AUTO_INCREMENT PRIMARY KEY,
+  fid INT NOT NULL DEFAULT 1,
+  numbirds INT DEFAULT 0,
+  impact VARCHAR(50) DEFAULT "unknown",
+  damage BOOLEAN DEFAULT FALSE,
+  altitude INT UNSIGNED DEFAULT 0,
+  conditions INT DEFAULT 1,
+  CONSTRAINT positive_altitude CHECK(altitude >= 0),
+  CONSTRAINT strike_fk_f FOREIGN KEY(fid) REFERENCES flights(fid),
+  CONSTRAINT strike_fk_c FOREIGN KEY(conditions) REFERENCES conditions(cid)
+)
